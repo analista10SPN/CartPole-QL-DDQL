@@ -24,7 +24,24 @@ def get_available_gpus():
     local_device_protos = device_lib.list_local_devices()
     return [x.name for x in local_device_protos if x.device_type == "GPU"]
 
+def calculate_energy(state):
+    x, x_dot, theta, theta_dot = state
+    # Constants
+    mass_cart = 1.0  # Mass of the cart
+    mass_pole = 0.1  # Mass of the pole
+    gravity = 9.8    # Gravitational acceleration
+    pole_length = 0.5 # Half the pole's length
 
+    # Kinetic energy of the cart
+    kinetic_energy_cart = 0.5 * mass_cart * x_dot**2
+    # Kinetic energy of the pole (rotational)
+    kinetic_energy_pole = 0.5 * (1/3) * mass_pole * pole_length**2 * theta_dot**2
+    # Potential energy of the pole (assuming the bottom of the pole as reference point)
+    potential_energy_pole = mass_pole * gravity * (pole_length * (1 - np.cos(theta)))
+
+    # Total energy
+    total_energy = kinetic_energy_cart + kinetic_energy_pole + potential_energy_pole
+    return total_energy
 # Check the GPU availability
 
 print("TensorFlow Version: {}".format(tf.__version__))
@@ -36,7 +53,7 @@ else:
 
 # -----------------------------
 
-EPISODES = 200
+EPISODES = 80
 
 
 class DQNAgent:
@@ -287,15 +304,22 @@ if __name__ == "__main__":
     Scores, episode = [], []
     avg100Scores = []
     avgScores = []
+    energy_expenditures = []
     for e in range(EPISODES):
         done = False
         t = 0
+        total_energy_expenditure = 0 
         state = env.reset()
         state = np.reshape(state[0], [1, state_size])
+        previous_energy = calculate_energy(state[0])
         while not done:
             action = agent.get_action(state)
             next_state, reward, done,_, info = env.step(action)
             next_state = np.reshape(next_state, [1, state_size])
+            current_energy = calculate_energy(next_state[0])
+            energy_difference = abs(current_energy - previous_energy)  # Calculate the difference in energy
+            total_energy_expenditure += energy_difference  # Accumulate energy expenditure
+            previous_energy = current_energy
             reward = reward if not done else -100
             agent.append_sample(state, action, reward, next_state, done)
             # agent.train_model2()
@@ -334,7 +358,7 @@ if __name__ == "__main__":
         # if t > max_steps:
         #         max_steps = t
         #         agent.model.save_weights('./cp_dqn_bs24_moddel.h5')
-
+        energy_expenditures.append(total_energy_expenditure)
         # if mean score for last 50 episode bigger than 195/495, stop training
         if np.mean(Scores[-min(100, len(Scores)) :]) >= (
             env.spec.max_episode_steps - 5
@@ -354,4 +378,12 @@ if __name__ == "__main__":
     plt.ylabel("Scores")
     plt.legend(["Actual", "Average", "Avg100Scores"])
     plt.savefig("cp_ddqn_bs24.png")
+    plt.show()
+
+    plt.figure()
+    plt.plot(energy_expenditures)
+    plt.title('Energy Expenditure per Episode')
+    plt.xlabel('Episode')
+    plt.ylabel('Energy Expenditure')
+    plt.grid(True)
     plt.show()
